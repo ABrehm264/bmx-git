@@ -223,7 +223,7 @@ namespace Inedo.BuildMasterExtensions.Git
 
         public void ExportFiles(SourceControlContext context, string targetDirectory)
         {
-            this.CopyNonGitFiles(context.WorkspaceDiskPath, targetDirectory);
+            this.CopyFolder(context.WorkspaceDiskPath, targetDirectory, false);
         }
 
         public void Clone(SourceControlContext context)
@@ -261,7 +261,8 @@ namespace Inedo.BuildMasterExtensions.Git
         /// </summary>
         /// <param name="sourceFolder">A path of the folder to be copied</param>
         /// <param name="targetFolder">A path of a folder to copy files to.  If targetFolder doesn't exist, it is created.</param>
-        private void CopyNonGitFiles(string sourceFolder, string targetFolder)
+        /// <param name="shouldIgnoreGitFiles"></param>
+        private void CopyFolder(string sourceFolder, string targetFolder, bool shouldIgnoreGitFiles = true)
         {
             var agent = this.Agent;
 
@@ -285,16 +286,22 @@ namespace Inedo.BuildMasterExtensions.Git
                 return p1.TrimEnd(separator) + separator + p2.TrimStart(separator);
             };
 
-            string[] foldersToCreate = entry.Flatten().SelectMany(di => di.SubDirectories).Select(fi => escapeSpecialChars(fi.Path)).Where(path => !path.Contains(separator + @".git")).ToArray().Select(name => combinePaths(targetFolder, name.Substring(sourceFolder.Length))).ToArray();
-            string[] filesToCopy = entry.Flatten().SelectMany(di => di.Files).Select(fi => escapeSpecialChars(fi.Path)).Where(path => !path.Contains(separator + @".git")).ToArray();
+            string[] foldersToCreate = entry.Flatten()
+                .SelectMany(di => di.SubDirectories)
+                .Select(fi => escapeSpecialChars(fi.Path))
+                .Where(path => !(shouldIgnoreGitFiles && path.Contains(separator + @".git"))).ToArray()
+                .Select(name => combinePaths(targetFolder, name.Substring(sourceFolder.Length))).ToArray();
 
-            foreach (string folder in foldersToCreate)
+            string[] filesToCopy = entry.Flatten()
+                .SelectMany(di => di.Files)
+                .Select(fi => escapeSpecialChars(fi.Path))
+                .Where(path => !(shouldIgnoreGitFiles && path.Contains(separator + @".git"))).ToArray();
+
+            foreach (string folder in foldersToCreate.Where(folder => !agent.DirectoryExists(folder)))
             {
-                if (!agent.DirectoryExists(folder))
-                {
-                    agent.CreateDirectory(folder);
-                }
+                agent.CreateDirectory(folder);
             }
+
             agent.FileCopyBatch(
                 sourceFolder,
                 filesToCopy,
